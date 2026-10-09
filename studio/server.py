@@ -76,6 +76,8 @@ def create_app(store, token):
             store.start()
         elif action == 'pause':
             store.pause()
+        elif action == 'workers':
+            store.set_workers(request.get_json().get('workers'))
         elif action == 'retry':
             store.retry_failed()
         else:
@@ -150,7 +152,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data-dir', default=str(Path.home() / 'Library/Application Support/Stradale Studio'))
     parser.add_argument('--port', type=int, default=0)
-    parser.add_argument('--workers', type=int, default=2)
+    parser.add_argument('--workers', type=int, default=None)
     parser.add_argument('--parent-pid', type=int)
     args = parser.parse_args()
     directory = Path(args.data_dir)

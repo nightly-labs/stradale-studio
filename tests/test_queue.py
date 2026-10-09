@@ -97,6 +97,40 @@ class QueueTests(unittest.TestCase):
         self.assertEqual(self.store.snapshot()['counts']['failed'], 1)
         self.assertEqual(maximum, 2)
 
+    def test_worker_setting_validation_and_restart(self):
+        for value in (0, 51, -1, 2.5, '4', True, None):
+            with self.assertRaises(ValueError): self.store.set_workers(value)
+        self.store.set_workers(50)
+        self.assertTrue(self.store.paused)
+        self.store.close(); self.store = QueueStore(self.root / 'state')
+        self.assertEqual(self.store.workers, 50)
+        self.assertTrue(self.store.paused)
+        self.store.set_workers(1)
+        self.store.close(); self.store = QueueStore(self.root / 'state')
+        self.assertEqual(self.store.workers, 1)
+
+    def test_live_worker_increase_and_decrease(self):
+        for i in range(55): self.add_photo(f'{i:02d}.png')
+        self.enqueue()
+        gates = [threading.Event() for _ in range(50)]
+        def process(job):
+            if job['id'] <= 50: gates[job['id']-1].wait(10)
+            return 'done', None, None
+        self.store.processor = process
+        try:
+            self.store.set_workers(1); self.store.start(); self.wait_for('running', 1)
+            self.assertEqual(self.store.snapshot()['counts']['pending'], 54)
+            self.store.set_workers(50); self.wait_for('running', 50, timeout=10)
+            self.store.set_workers(1)
+            for gate in gates[:49]: gate.set()
+            self.wait_for('running', 1)
+            self.assertEqual(self.store.snapshot()['counts']['pending'], 5)
+            self.store.pause(); gates[49].set(); self.wait_for('running', 0)
+            self.assertEqual(self.store.snapshot()['counts']['pending'], 5)
+            self.store.start(); self.wait_for('done', 55)
+        finally:
+            for gate in gates: gate.set()
+
     def test_import_10000_is_paginated_and_persistent(self):
         for i in range(10000): (self.source/f'car-{i:05d}.jpg').touch()
         batch = self.enqueue()

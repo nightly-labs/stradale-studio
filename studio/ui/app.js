@@ -60,6 +60,16 @@ $('report').onclick = async () => {
     else download('/api/report', 'stradale-report.csv');
   } catch (e) { notify(e.message, true); }
 };
+let savingWorkers = false;
+for (let count = 1; count <= 50; count++) $('workers').add(new Option(String(count), String(count), false, count === 2));
+$('workers').onchange = async () => {
+  savingWorkers = true; $('workers').disabled = true;
+  try {
+    await api('/api/queue/workers', { workers: Number($('workers').value) });
+    notify(`Set to ${$('workers').value} images at once. Images already in progress will finish.`);
+  } catch (e) { $('workers').value = String(lastQueue?.workers ?? 2); notify(e.message, true); }
+  finally { savingWorkers = false; $('workers').disabled = false; await refresh(); }
+};
 const stateNames = { pending: 'Waiting', running: 'Processing', done: 'Saved', review: 'Need review', failed: 'Failed' };
 let refreshing = false, rowSignature = '', batchSignature = '';
 async function refresh() {
@@ -73,7 +83,7 @@ async function refresh() {
     $('progress').max = total || 1; $('progress').value = complete;
     $('queue-state').textContent = data.paused ? (c.running ? 'Pausing…' : 'Paused') : c.pending || c.running ? `Processing · ${c.running} active` : 'Queue finished';
     $('start').disabled = !data.paused || !c.pending; $('pause').disabled = data.paused; $('retry').disabled = !c.failed; $('report').disabled = !total;
-    $('worker-info').textContent = `${data.workers} workers · progress saved automatically`;
+    if (!savingWorkers && document.activeElement !== $('workers') && $('workers').value !== String(data.workers)) $('workers').value = String(data.workers);
     $('page-label').textContent = data.total ? `${page * 50 + 1}–${Math.min((page + 1) * 50, data.total)} of ${data.total.toLocaleString()}` : '0 images';
     $('previous').disabled = page === 0; $('next').disabled = (page + 1) * 50 >= data.total;
     const rows = document.createDocumentFragment();

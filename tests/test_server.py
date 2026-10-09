@@ -29,3 +29,14 @@ class ServerTests(unittest.TestCase):
         self.assertIn('error', result.json)
     def test_dns_rebinding_host_rejected(self):
         self.assertEqual(self.client.get('/launch?token=test-token', base_url='http://example.com:9999').status_code, 403)
+
+    def test_worker_setting_api(self):
+        self.login()
+        for value in (1, 50):
+            result = self.request('post', '/api/queue/workers', json={'workers': value})
+            self.assertEqual(result.status_code, 200)
+            self.assertEqual(self.request('get', '/api/queue').json['workers'], value)
+        for value in (0, 51, 2.5, True, '3', None):
+            result = self.request('post', '/api/queue/workers', json={'workers': value})
+            self.assertEqual(result.status_code, 400)
+        self.assertEqual(self.store.workers, 50)

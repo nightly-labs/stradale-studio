@@ -14,7 +14,10 @@ Open **Stradale Studio** from your Applications folder.
 5. Check **Need review** and **Failed**. Open saved images with **Inspect**.
 6. Select **Save report** for a CSV containing paths, status, errors, and processing times.
 
-The queue runs two images at a time. It can contain 10,000 images without loading them all
+Use **Images at once** to choose 1–50 workers. The default is 2, and the setting is saved
+for the next launch. You can change it while the queue runs. When you lower the setting,
+active images finish before new work starts under the new limit. More workers use more
+memory and do not always increase speed. The queue can contain 10,000 images without loading them all
 into memory. Pause stops new work; active images finish. Quit saves queue progress. The next
 launch starts paused, and **Start queue** resumes waiting images. Keep the Mac awake and
 leave the app open while it processes the queue. The app does not run as a background service

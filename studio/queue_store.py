@@ -50,11 +50,11 @@ def publish_png(rgb, destination):
 
 
 class QueueStore:
-    def __init__(self, directory, workers=2, processor=None):
+    def __init__(self, directory, workers=None, processor=None):
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=True)
         self.database = self.directory / 'queue.sqlite3'
-        self.workers = max(1, min(int(workers), 4))
+        self.active = 0
         self.processor = processor or self.process_image
         self.condition = threading.Condition(threading.RLock())
         self.paused = True
@@ -63,6 +63,7 @@ class QueueStore:
         with self.db() as db:
             db.executescript('''
                 PRAGMA journal_mode=WAL;
+                CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
                 CREATE TABLE IF NOT EXISTS batches (
                     id TEXT PRIMARY KEY, source TEXT NOT NULL, output TEXT NOT NULL,
                     target TEXT NOT NULL, replacement TEXT NOT NULL, created REAL NOT NULL
@@ -77,6 +78,9 @@ class QueueStore:
                 CREATE INDEX IF NOT EXISTS jobs_state_id ON jobs(state,id);
                 CREATE INDEX IF NOT EXISTS jobs_batch ON jobs(batch_id);
             ''')
+            saved = db.execute("SELECT value FROM settings WHERE key='workers'").fetchone()
+            self.workers = self.validate_workers(workers if workers is not None else (saved[0] if saved else 2))
+            db.execute("INSERT OR REPLACE INTO settings VALUES ('workers',?)", (self.workers,))
             if "replacement_override" not in {r[1] for r in db.execute("PRAGMA table_info(jobs)")}:
                 db.execute("ALTER TABLE jobs ADD COLUMN replacement_override TEXT")
             db.execute("UPDATE jobs SET state='pending',error='Resumed after an interrupted run.' WHERE state='running'")
@@ -125,13 +129,32 @@ class QueueStore:
             self.condition.notify_all()
         return {'id': identifier, 'count': len(records), 'output': str(output)}
 
+    @staticmethod
+    def validate_workers(value):
+        if type(value) is not int or not 1 <= value <= 50:
+            raise ValueError('Choose a whole number from 1 to 50.')
+        return value
+
+    def ensure_workers(self):
+        # Called with the condition held. Idle threads do not load photos.
+        while len(self.threads) < self.workers:
+            thread = threading.Thread(target=self.worker, name=f'plate-worker-{len(self.threads)}', daemon=True)
+            self.threads.append(thread)
+            thread.start()
+
+    def set_workers(self, value):
+        value = self.validate_workers(value)
+        with self.condition:
+            with self.db() as db:
+                db.execute("INSERT OR REPLACE INTO settings VALUES ('workers',?)", (value,))
+            self.workers = value
+            if self.threads and not self.closed:
+                self.ensure_workers()
+            self.condition.notify_all()
+
     def start(self):
         with self.condition:
-            if not self.threads:
-                for number in range(self.workers):
-                    thread = threading.Thread(target=self.worker, name=f'plate-worker-{number}', daemon=True)
-                    self.threads.append(thread)
-                    thread.start()
+            self.ensure_workers()
             self.paused = False
             self.condition.notify_all()
 
@@ -144,8 +167,9 @@ class QueueStore:
             self.closed = True
             self.paused = True
             self.condition.notify_all()
+        deadline = time.monotonic() + 40
         for thread in self.threads:
-            thread.join(timeout=40)
+            thread.join(timeout=max(0, deadline-time.monotonic()))
 
     def claim(self):
         with self.db() as db:
@@ -158,7 +182,7 @@ class QueueStore:
     def worker(self):
         while True:
             with self.condition:
-                while self.paused and not self.closed:
+                while (self.paused or self.active >= self.workers) and not self.closed:
                     self.condition.wait()
                 if self.closed:
                     return
@@ -166,15 +190,21 @@ class QueueStore:
                 if not job:
                     self.condition.wait(timeout=1)
                     continue
+                self.active += 1
             start = time.perf_counter()
             try:
                 state, error, corners = self.processor(job)
             except Exception as exc:
                 state, error, corners = 'failed', str(exc)[:1000], None
-            with self.db() as db:
-                db.execute('UPDATE jobs SET state=?,error=?,corners=?,milliseconds=?,updated=? WHERE id=?',
-                           (state, error, json.dumps(corners) if corners is not None else None,
-                            round((time.perf_counter()-start)*1000), time.time(), job['id']))
+            try:
+                with self.db() as db:
+                    db.execute('UPDATE jobs SET state=?,error=?,corners=?,milliseconds=?,updated=? WHERE id=?',
+                               (state, error, json.dumps(corners) if corners is not None else None,
+                                round((time.perf_counter()-start)*1000), time.time(), job['id']))
+            finally:
+                with self.condition:
+                    self.active -= 1
+                    self.condition.notify_all()
 
     @staticmethod
     def checked_source(job):
