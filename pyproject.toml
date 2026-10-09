@@ -1,0 +1,9 @@
+[project]
+name = "stradale-studio"
+version = "0.2.0"
+description = "Local macOS plate editor with a persistent folder queue"
+requires-python = ">=3.12,<3.14"
+dependencies = ["flask>=3.1,<4", "numpy>=2,<3", "opencv-python-headless>=4.10,<5", "Pillow>=11,<13"]
+
+[dependency-groups]
+dev = ["pyinstaller>=6.17,<7"]
