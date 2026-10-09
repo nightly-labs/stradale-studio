@@ -1,6 +1,6 @@
 # Stradale Studio
 
-A local Mac app that replaces plate text in car photos. Select a folder, set the text,
+An open-source local Mac app that replaces plate text in car photos. Select a folder, set the text,
 and process the images through a persistent queue. No photos are sent to a cloud service.
 
 ## Use the app
@@ -130,3 +130,11 @@ Based on the first Plate Studio prototype. References:
 [Apple Vision](https://developer.apple.com/documentation/vision/vnrecognizetextrequest),
 [OpenCV perspective transforms](https://docs.opencv.org/4.4.0/da/d54/group__imgproc__transform.html),
 and [PyInstaller packaging](https://pyinstaller.org/en/v6.17.0/usage.html).
+
+## License
+
+Stradale Studio source code is available under the [MIT license](LICENSE).
+Third-party dependencies keep their own licenses. Apple frameworks and system fonts
+are provided by macOS and are not covered by this project's MIT license.
+
+Repository: https://github.com/nightly-labs/stradale-studio
